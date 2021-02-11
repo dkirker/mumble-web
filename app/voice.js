@@ -1,17 +1,16 @@
-import { Writable, Transform } from 'stream'
+import { Writable } from 'stream'
 import MicrophoneStream from 'microphone-stream'
 import audioContext from 'audio-context'
-import chunker from 'stream-chunker'
-import Resampler from 'libsamplerate.js'
-import getUserMedia from 'getusermedia'
 import keyboardjs from 'keyboardjs'
 import vad from 'voice-activity-detection'
 import DropStream from 'drop-stream'
+import { WorkerBasedMumbleClient } from './worker-client'
 
 class VoiceHandler extends Writable {
-  constructor (client) {
+  constructor (client, settings) {
     super({ objectMode: true })
     this._client = client
+    this._settings = settings
     this._outbound = null
     this._mute = false
   }
@@ -33,23 +32,13 @@ class VoiceHandler extends Writable {
         this.emit('started_talking')
         return this._outbound
       }
-      this._outbound = new Resampler({
-        unsafe: true,
-        type: Resampler.Type.SINC_FASTEST,
-        ratio: 48000 / audioContext.sampleRate
-      })
 
-      const buffer2Float32Array = new Transform({
-        transform (data, _, callback) {
-          callback(null, new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4))
-        },
-        readableObjectMode: true
-      })
-
-      this._outbound
-        .pipe(chunker(4 * 480))
-        .pipe(buffer2Float32Array)
-        .pipe(this._client.createVoiceStream())
+      if (this._client instanceof WorkerBasedMumbleClient) {
+        // Note: the samplesPerPacket argument is handled in worker.js and not passed on
+        this._outbound = this._client.createVoiceStream(this._settings.samplesPerPacket)
+      } else {
+        this._outbound = this._client.createVoiceStream()
+      }
 
       this.emit('started_talking')
     }
@@ -71,8 +60,8 @@ class VoiceHandler extends Writable {
 }
 
 export class ContinuousVoiceHandler extends VoiceHandler {
-  constructor (client) {
-    super(client)
+  constructor (client, settings) {
+    super(client, settings)
   }
 
   _write (data, _, callback) {
@@ -85,9 +74,9 @@ export class ContinuousVoiceHandler extends VoiceHandler {
 }
 
 export class PushToTalkVoiceHandler extends VoiceHandler {
-  constructor (client, key) {
-    super(client)
-    this._key = key
+  constructor (client, settings) {
+    super(client, settings)
+    this._key = settings.pttKey
     this._pushed = false
     this._keydown_handler = () => this._pushed = true
     this._keyup_handler = () => {
@@ -114,10 +103,11 @@ export class PushToTalkVoiceHandler extends VoiceHandler {
 }
 
 export class VADVoiceHandler extends VoiceHandler {
-  constructor (client, level) {
-    super(client)
+  constructor (client, settings) {
+    super(client, settings)
+    let level = settings.vadLevel
     const self = this
-    this._vad = vad(audioContext, theUserMedia, {
+    this._vad = vad(audioContext(), theUserMedia, {
       onVoiceStart () {
         console.log('vad: start')
         self._active = true
@@ -174,16 +164,13 @@ export class VADVoiceHandler extends VoiceHandler {
 
 var theUserMedia = null
 
-export function initVoice (onData, onUserMediaError) {
-  getUserMedia({ audio: true }, (err, userMedia) => {
-    if (err) {
-      onUserMediaError(err)
-    } else {
-      theUserMedia = userMedia
-      var micStream = new MicrophoneStream(userMedia, { objectMode: true, bufferSize: 1024 })
-      micStream.on('data', data => {
-        onData(Buffer.from(data.getChannelData(0).buffer))
-      })
-    }
+export function initVoice (onData) {
+  return window.navigator.mediaDevices.getUserMedia({ audio: true }).then((userMedia) => {
+    theUserMedia = userMedia
+    var micStream = new MicrophoneStream(userMedia, { objectMode: true, bufferSize: 1024 })
+    micStream.on('data', data => {
+      onData(Buffer.from(data.getChannelData(0).buffer))
+    })
+    return userMedia
   })
 }

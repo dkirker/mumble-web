@@ -1,93 +1,109 @@
-var theme = 'MetroMumbleLight'
-
-var path = require('path')
+var theme = '../themes/MetroMumbleLight'
+var path = require('path');
 
 module.exports = {
-  entry: [
-    './app/index.js',
-    './app/index.html'
-  ],
+  mode: 'development',
+  entry: {
+    index: [
+      './app/index.js',
+      './app/index.html'
+    ],
+    config: './app/config.js',
+    theme: './app/theme.js',
+    matrix: './app/matrix.js'
+  },
+  devtool: "cheap-source-map",
   output: {
-    filename: 'index.js',
-    path: './dist'
+    path: path.join(__dirname, 'dist'),
+    chunkFilename: '[chunkhash].js',
+    filename: '[name].js'
   },
   module: {
-    postLoaders: [
-      {
-        include: /mumble-streams\/lib\/data.js/,
-        loader: 'transform-loader?brfs'
-      }
-    ],
-    loaders: [
+    rules: [
       {
         test: /\.js$/,
         exclude: /node_modules/,
-        loader: 'babel-loader',
-        query: {
-          presets: ['es2015'],
-          plugins: ['transform-runtime']
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: ['@babel/preset-env'],
+            plugins: ['@babel/plugin-transform-runtime']
+          }
         }
       },
       {
         test: /\.html$/,
-        loaders: [
-          'file-loader?name=[name].[ext]',
-          'extract-loader',
-          'html-loader?' + JSON.stringify({
-            attrs: ['img:src', 'link:href'],
-            interpolate: 'require',
-            root: theme
-          })
+        use: [
+          {
+            loader: 'file-loader',
+            options: { 'name': '[name].[ext]' }
+          },
+          {
+            loader: "extract-loader"
+          },
+          {
+            loader: 'html-loader',
+            options: {
+              attrs: ['img:src', 'link:href'],
+              root: theme
+            }
+          }
         ]
       },
       {
         test: /\.css$/,
-        loaders: [
+        use: [
           'file-loader',
           'extract-loader',
           'css-loader'
         ]
       },
       {
+        test: /\.scss$/,
+        use: [
+          'file-loader?name=[hash].css',
+          'extract-loader',
+          'css-loader',
+          'sass-loader'
+        ]
+      },
+      {
+        type: 'javascript/auto',
         test: /manifest\.json$|\.xml$/,
-        loaders: [
+        use: [
           'file-loader',
           'extract-loader',
-          'regexp-replace-loader?' + JSON.stringify({
-            match: {
-              pattern: "#require\\('([^']*)'\\)",
-              flags: 'g'
-            },
-            replaceWith: '"+require("$1")+"'
-          }),
+          {
+            loader: 'regexp-replace-loader',
+            options: {
+              match: {
+                pattern: "#require\\('([^']*)'\\)",
+                flags: 'g'
+              },
+              replaceWith: '"+require("$1")+"'
+            }
+          },
           'raw-loader'
         ]
       },
       {
-        test: /\.json$/,
-        exclude: /manifest\.json$/,
-        loader: 'json-loader'
+        test: /\.(svg|png|ico)$/,
+        use: [
+          'file-loader'
+        ]
       },
       {
-        test: /\.(svg|png|ico)$/,
-        loader: 'file-loader'
+        test: /worker\.js$/,
+        use: { loader: 'worker-loader' }
+      },
+      {
+        enforce: 'post',
+        test: /mumble-streams\/lib\/data.js/,
+        use: [
+          'transform-loader?brfs'
+        ]
       }
     ]
   },
-  resolve: {
-    alias: {
-      webworkify: 'webworkify-webpack-dropin'
-    },
-    root: [
-      path.resolve('./themes/')
-    ]
-  },
-  includes: {
-    pattern: function (filepath) {
-      return {
-        re: /#require\((.+)\)/,
-        index: 1
-      }
-    }
-  }
+  target: 'web'
 }
