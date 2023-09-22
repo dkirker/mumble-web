@@ -15,6 +15,8 @@
     <meta name="msapplication-config" content="${require('./favicon/browserconfig.xml')}">
     <meta name="theme-color" content="#ffffff">
 
+    <link rel="stylesheet" href="../node_modules/leaflet/dist/leaflet.css">
+
     <script src="config.js"></script>
     <script src="config.local.js"></script>
     <script src="theme.js"></script>
@@ -526,6 +528,10 @@
                       rel="Source Code" src="/svg/source-code.svg"
                       title="Open Soure Code" alt="Open Source Code">
       </div>
+      <div class="left-column-container">
+        <div class="map-container">
+          <div id="map"></div>
+        </div>
       <div class="chat">
         <script type="text/html" id="log-generic">
           <span data-bind="text: value"></span>
@@ -568,6 +574,7 @@
               event: {keypress: submitOnEnter}"></textarea>
         </form>
       </div>
+      </div>
       <script type="text/html" id="channel">
         <div class="channel" data-bind="
             click: $root.select, 
@@ -592,10 +599,10 @@
             data-bind="visible: $root.thisUser().channel() === $data">
           <img class="channel-icon-linked" src="/svg/channel_linked.svg"
             data-bind="visible: linked() && $root.thisUser().channel() !== $data">
-          <div class="channel-name">
-            <span data-bind="text: name"></span>
+	  <div class="channel-name ui-actionable">
+            <span data-bind="text: name, event: {selectstart: function(){return false;}}"></span>
             <!-- ko if: $root.settings.userCountInChannelName() && userCount() !== 0 -->
-            &nbsp;(<span data-bind="text: userCount()"></span>)
+            &nbsp;(<span data-bind="text: userCount(), event: {selectstart: function(){return false;}}"></span>)
             <!-- /ko -->
           </div>
         </div>
@@ -649,7 +656,7 @@
             <img class="user-talk user-talk-shout" data-bind="visible: talking() == 'shout'"
                 alt="shout" src="/svg/talking_alt.svg">
             <!-- /ko -->
-            <div class="user-name" data-bind="text: name"></div>
+            <div class="user-name ui-actionable" data-bind="text: name, event: {selectstart: function(){return false;} }"></div>
           </div>
         </div>
         <!-- /ko -->
@@ -669,11 +676,17 @@
         <!-- /ko -->
         <!-- /ko -->
       </script>
-      <div class="channel-root-container" data-bind="if: root, visible: !minimalView()">
-        <div class="channel-root" data-bind="template: {name: 'channel', data: root}"></div>
-      </div>
-      <div class="channel-root-container" data-bind="if: thisUser, visible: minimalView()">
-        <div class="channel-root" data-bind="template: {name: 'channel', data: thisUser().channel}"></div>
+      <div class="channel-root-container">
+        <div class="ptt-button-container" data-bind="visible: pttMode()">
+          <div class="ptt-button ui-actionable" data-bind="event: { mousedown: function(data, evt){pttDown(data, evt, $element)}, touchstart: function(data, evt){pttDown(data, evt, $element)}, mouseup: function(data, evt){pttUp(data, evt, $element)}, touchend: function(data, evt){pttUp(data, evt, $element)}, selectstart: function(){return false;} }">Push to Talk</div>
+        </div>
+
+        <div class="channel-container" data-bind="if: root, visible: !minimalView()">
+          <div class="channel-root" data-bind="template: {name: 'channel', data: root}"></div>
+        </div>
+        <div class="channel-container" data-bind="if: thisUser, visible: minimalView()">
+          <div class="channel-root" data-bind="template: {name: 'channel', data: thisUser().channel}"></div>
+        </div>
       </div>
     </div>
   </body>

@@ -86,6 +86,14 @@ export class PushToTalkVoiceHandler extends VoiceHandler {
     keyboardjs.bind(this._key, this._keydown_handler, this._keyup_handler)
   }
 
+  pttDown () {
+    this._keydown_handler()
+  }
+
+  pttUp () {
+    this._keyup_handler()
+  }
+
   _write (data, _, callback) {
     if (this._pushed && !this._mute) {
       this._getOrCreateOutbound().write(data, callback)

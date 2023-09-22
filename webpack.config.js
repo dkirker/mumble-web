@@ -15,8 +15,9 @@ module.exports = {
   devtool: "cheap-source-map",
   output: {
     path: path.join(__dirname, 'dist'),
-    chunkFilename: '[chunkhash].js',
-    filename: '[name].js'
+    chunkFilename: '[contenthash].js',
+    filename: "[name].js",
+    //filename: '[name].js'
   },
   module: {
     rules: [

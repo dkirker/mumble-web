@@ -11,11 +11,29 @@ import ko from 'knockout'
 import _dompurify from 'dompurify'
 import keyboardjs from 'keyboardjs'
 import anchorme from 'anchorme'
+//import '../node_modules/leaflet/dist/leaflet.css'
+import L from 'leaflet'
+import * as geolocation from 'geolocation'
+
+/* This code is needed to properly load the images in the Leaflet CSS */
+/*delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: require('../node_modules/leaflet/dist/images/marker-icon-2x.png'),
+  iconUrl: require('../node_modules/leaflet/dist/images/marker-icon.png'),
+  shadowUrl: require('../node_modules/leaflet/dist/images/marker-shadow.png'),
+});*/
+
 
 import { ContinuousVoiceHandler, PushToTalkVoiceHandler, VADVoiceHandler, initVoice } from './voice'
 import {initialize as localizationInitialize, translate} from './loc';
 
 const dompurify = _dompurify(window)
+
+const LOCATION_PREFIX_STRING = "LOC: "
+//const LOCATION_REGEX_STRING = "LOC\:\s([\.\-\d]*)\,\s*([\.\-\d]*)"
+const LOCATION_REGEX = /LOC\:\s([\.\-\d]*)\,\s*([\.\-\d]*)(?:\s*\(([\d]*)\))?/
+
+
 
 // from: https://gist.github.com/haliphax/5379454
 ko.extenders.scrollFollow = function (target, selector) {
@@ -365,6 +383,9 @@ class GlobalBindings {
     this.selected = ko.observable()
     this.selfMute = ko.observable(this.config.defaults.startMute)
     this.selfDeaf = ko.observable(this.config.defaults.startDeaf)
+    this.pttMode = ko.observable(false)
+    this.map = L.map("map");
+    this.mapMarkers = {}
 
     this.selfMute.subscribe(mute => {
       if (voiceHandler) {
@@ -513,6 +534,8 @@ class GlobalBindings {
         client.on('newChannel', channel => this._newChannel(channel))
         // Register future users
         client.on('newUser', user => this._newUser(user))
+        // Register for user updates
+        client.on('updateUser', user => this._updateUser(user))
 
         // Handle messages
         client.on('message', (sender, message, users, channels, trees) => {
@@ -567,6 +590,21 @@ class GlobalBindings {
           log(translate('logentry.connection_error'), err)
         }
       })
+    }
+
+    // TODO: Take advantage of ko for the data handling
+    this._updateUser = user => {
+      var id = user.uniqueId
+      var locationStr = user.comment
+      var name = user.username
+      var channel = user.channel
+
+      console.log("User update ", user)
+      console.log("User update ", name, " (", id, "): ", locationStr)
+
+      if (id !== undefined && locationStr && locationStr.includes(LOCATION_PREFIX_STRING)) {
+        this.updateUserOnMap(id, name, channel, locationStr)
+      }
     }
 
     this._newUser = user => {
@@ -742,6 +780,9 @@ class GlobalBindings {
           }
         })
       })
+
+      // And finally...
+      this._updateUser(user)
     }
 
     this._newChannel = channel => {
@@ -847,6 +888,7 @@ class GlobalBindings {
         log(translate('logentry.unknown_voice_mode'), mode)
         return
       }
+      this.pttMode(mode === 'ptt')
       voiceHandler.on('started_talking', () => {
         if (this.thisUser()) {
           this.thisUser().talking('on')
@@ -932,6 +974,72 @@ class GlobalBindings {
           })
         }
       }
+    }
+
+    this.pttDown = (data, evt, element) => {
+      console.log("pttDown")
+      if (this.pttMode() && voiceHandler) { //this.thisUser()) {
+        console.log("set talking on")
+        //this.thisUser().talking('on')
+        voiceHandler.pttDown()
+        element.classList.add("down")
+      }
+    }
+
+    this.pttUp = (data, evt, element) => {
+      console.log("pttUp")
+      if (this.pttMode() && voiceHandler) { //this.thisUser()) {
+        console.log("set talking off")
+        //this.thisUser().talking('off')
+        voiceHandler.pttUp()
+        element.classList.remove("down")
+      }
+    }
+
+    this.updateUserOnMap = (id, name, channel, locationStr) => {
+      var markerObj = {
+        userId: id,
+        userName: name,
+        userChannelName: channel !== undefined ? channel.name : "",
+        coords: {
+          latitude: 0.00,
+          longitude: 0.00
+        },
+        accuracy: -1,
+        heading: 0,
+        speed: 0,
+        updateTime: 0
+      }
+
+      var match = locationStr.match(LOCATION_REGEX)
+
+      if (match[1] !== undefined) markerObj.coords.latitude = match[1]
+      if (match[2] !== undefined) markerObj.coords.longitude = match[2]
+      if (match[3] !== undefined) markerObj.updateTime = match[3]
+
+      if (!this.mapMarkers[id]) {
+        console.log("Adding new user marker ", markerObj)
+        var marker = L.marker([markerObj.coords.latitude, markerObj.coords.longitude])
+
+        markerObj.marker = marker
+
+        this.mapMarkers[id] = markerObj
+
+        marker.addTo(this.map)
+      } else {
+        console.log("Updating existing user marker ", markerObj)
+        var newCoords = new L.LatLng(markerObj.coords.latitude, markerObj.coords.longitude)
+
+        this.mapMarkers[id].marker.setLatLng(newCoords)
+        markerObj.marker = this.mapMarkers[id].marker
+        this.mapMarkers[id] = markerObj
+      }
+    }
+
+    this.updateMyLocation = (position) => {
+      var coords = position.coords
+
+      console.log("My position ", coords.latitude, ", ", coords.longitude)
     }
 
     this.requestMove = (user, channel) => {
@@ -1061,6 +1169,25 @@ class GlobalBindings {
         this.toolbarHorizontal(!this.settings.toolbarVertical)
       }
     }
+
+    this.map.setView([37.775, -122.419], 9)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(this.map)
+    //this.map.invalidateSize()
+    var that = this
+    setTimeout(() => { that.map.invalidateSize() }, 1000)
+
+    /*geolocation.getCurrentPosition(function (err, position) {
+      var coords = position.coords
+      this.map.setView([coords.latitude, coords.longitude], 14)
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(this.map)
+    })*/
+    geolocation.createWatcher(position => this.updateMyLocation(position))
   }
 }
 var ui = new GlobalBindings(window.mumbleWebConfig)
@@ -1300,6 +1427,12 @@ function translateEverything() {
 }
 
 async function main() {
+  var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+
+  if (isSafari) {
+    navigator.mediaDevices.getUserMedia({audio: true})
+  }
+
   await localizationInitialize(navigator.language);
   translateEverything();
   try {
